@@ -188,60 +188,43 @@ I'd probably fix the decimal point and further enhance it as I study more
 To check if the arrival of packages affects review scores
 
 **Why it matters:**
----
+Company has to know if one, their deliveries arrive early, on time or late and second if being early, on time or late affects the ratings, that way it'll be easy to mitigate
  
 **Approach:**
 ---
  
 ```sql
-WITH Truncated_Day AS (
-SELECT date_trunc ('day', o.order_delivered_customer_date) AS delivered_day,  date_trunc ('day', o.order_estimated_delivery_date) AS estimated_day,
-orv.review_score,
-o.order_id
+WITH truncated_day AS(
+SELECT DATE_TRUNC('day', o.order_estimated_delivery_date) AS truncated_estimated, DATE_TRUNC('day', o.order_delivered_customer_date) AS truncated_delivered, review_score, review_id
 FROM orders o
-JOIN order_reviews orv ON orv.order_id = o.order_id
+JOIN order_reviews ors ON o.order_id = ors.order_id
+),
+when_statements AS(
+  SELECT CASE
+  WHEN truncated_estimated > truncated_delivered THEN 'Early'
+  WHEN truncated_estimated < truncated_delivered THEN 'Late'
+  WHEN truncated_estimated = truncated_delivered THEN 'On-Time'
+  END AS categorized_date,
+  CASE 
+  WHEN review_score >= 4 THEN 'High Rating'
+  WHEN review_score < 4 THEN 'Low Rating'
+  END AS categorized_score, review_score
+  FROM truncated_day
 )
-SELECT  *,
-CASE
-WHEN delivered_day = estimated_day THEN 'On-Time'
-WHEN delivered_day < estimated_day THEN 'Early'
-WHEN delivered_day > estimated_day THEN 'Late'
-END AS Categorized_Arrival
-FROM Truncated_Day
-LIMIT 25;
+SELECT count(*) FILTER (WHERE review_score >= 4) AS clause_statement, categorized_date, count(*) as fullcount, ROUND (100.0 * count(*) FILTER (WHERE review_score >= 4) / count(*), 1) AS percent
+FROM when_statements
+GROUP BY categorized_date
 ```
  
 **Key decision / tricky part:**
 ---
 
-**Result:**
-| delivered_day          | estimated_day          | review_score | order_id                         | categorized_arrival |
-| ---------------------- | ---------------------- | ------------ | -------------------------------- | ------------------- |
-| 2018-01-17 00:00:00+00 | 2018-02-02 00:00:00+00 | 4            | 73fc7af87114b39712e6da79b0a377eb | Early               |
-| 2018-03-09 00:00:00+00 | 2018-03-14 00:00:00+00 | 5            | a548910a1c6147796b98fdf73dbeba33 | Early               |
-| 2018-02-16 00:00:00+00 | 2018-03-09 00:00:00+00 | 5            | f9e4b658b201a9f2ecdecbb34bed034b | Early               |
-| 2017-04-20 00:00:00+00 | 2017-05-10 00:00:00+00 | 5            | 658677c97b385a9be170737859d3511b | Early               |
-| 2018-02-28 00:00:00+00 | 2018-03-09 00:00:00+00 | 5            | 8e6bfb81e283fa7e4f11123a3fb894f1 | Early               |
-| 2018-04-12 00:00:00+00 | 2018-05-03 00:00:00+00 | 1            | b18dcdf73be66366873cd26c5724d1dc | Early               |
-| 2017-07-15 00:00:00+00 | 2017-08-03 00:00:00+00 | 5            | e48aa0d2dcec3a2e87348811bcfdf22b | Early               |
-| 2018-08-13 00:00:00+00 | 2018-10-10 00:00:00+00 | 5            | c31a859e34e3adac22f376954e19b39d | Early               |
-| 2017-05-16 00:00:00+00 | 2017-05-30 00:00:00+00 | 5            | 9c214ac970e84273583ab523dfafd09b | Early               |
-| 2018-05-21 00:00:00+00 | 2018-06-06 00:00:00+00 | 4            | b9bf720beb4ab3728760088589c62129 | Early               |
-| 2017-12-22 00:00:00+00 | 2018-01-15 00:00:00+00 | 5            | cdf9aa68e72324eeb25c7de974696ee2 | Early               |
-| 2017-12-18 00:00:00+00 | 2018-01-02 00:00:00+00 | 5            | 3d374c9e46530bb5ed4a7648915306a6 | Early               |
-| 2018-02-15 00:00:00+00 | 2018-02-26 00:00:00+00 | 4            | 9d6f15f95d01e79bd1349cc208361f09 | Early               |
-| 2018-03-28 00:00:00+00 | 2018-04-11 00:00:00+00 | 4            | 2eaf8e099d871cd5c22b83b5ea8f6e0e | Early               |
-| 2017-04-29 00:00:00+00 | 2017-05-11 00:00:00+00 | 3            | d7bd0e4afdf94846eb73642b4e3e75c3 | Early               |
-| 2018-05-22 00:00:00+00 | 2018-06-07 00:00:00+00 | 5            | e51478e7e277a83743b6f9991dbfa3fb | Early               |
-| 2018-02-21 00:00:00+00 | 2018-01-17 00:00:00+00 | 2            | 0dacf04c5ad59fd5a0cc1faa07c34e39 | Late                |
-| 2018-03-24 00:00:00+00 | 2018-04-03 00:00:00+00 | 5            | ff1581e08b3011021e7c7de592ddc81e | Early               |
-| 2017-09-28 00:00:00+00 | 2017-10-10 00:00:00+00 | 3            | 70a752414a13d09cc1f2b437b914b28e | Early               |
-| null                   | 2018-08-13 00:00:00+00 | 1            | 583174fbe37d3d5f0d6661be3aad1786 | null                |
-| 2017-10-05 00:00:00+00 | 2017-10-11 00:00:00+00 | 4            | a9953b2f0b1665ac7586cc5a6ac8f58c | Early               |
-| 2018-03-16 00:00:00+00 | 2018-03-22 00:00:00+00 | 5            | ae168dfba236919411fe08f336fefa44 | Early               |
-| 2018-07-09 00:00:00+00 | 2018-07-23 00:00:00+00 | 5            | 4fc44d78867142c627497b60a7e0228a | Early               |
-| 2017-09-08 00:00:00+00 | 2017-09-14 00:00:00+00 | 5            | 7c9956750739a47dba7a6928ba2f0245 | Early               |
-| 2017-12-01 00:00:00+00 | 2017-12-15 00:00:00+00 | 5            | 79832b7cb59ac6f887088ffd686e1d5e | Early               |
+| clause_statement | categorized_date | fullcount | percent |
+| ---------------- | ---------------- | --------- | ------- |
+| 423              | null             | 2865      | 14.8    |
+| 953              | On-Time          | 1291      | 73.8    |
+| 73382            | Early            | 88658     | 82.8    |
+| 1712             | Late             | 6410      | 26.7    |
  
  
 **What I'd do differently / follow-up questions:**
